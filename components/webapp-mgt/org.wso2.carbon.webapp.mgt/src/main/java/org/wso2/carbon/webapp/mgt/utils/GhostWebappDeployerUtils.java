@@ -45,7 +45,7 @@ import org.wso2.carbon.core.multitenancy.utils.TenantAxisUtils;
 import org.wso2.carbon.utils.CarbonUtils;
 import org.wso2.carbon.utils.deployment.DeploymentFileDataWrapper;
 import org.wso2.carbon.utils.deployment.GhostDeployerUtils;
-import org.wso2.carbon.utils.deployment.GhostArtifactRegistry;
+import org.wso2.carbon.utils.deployment.GhostArtifactRepository;
 import org.wso2.carbon.webapp.mgt.DataHolder;
 import org.wso2.carbon.webapp.mgt.TomcatGenericWebappsDeployer;
 import org.wso2.carbon.webapp.mgt.WebApplication;
@@ -97,10 +97,12 @@ public class GhostWebappDeployerUtils {
         synchronized (ghostWebapp.getContextName().intern()) {
             // there can be situations in which the actual webapp is already deployed and
             // available in the webapps holder
-            WebApplicationsHolder webappsHolder = (WebApplicationsHolder)
-                    configurationContext.getProperty(CarbonConstants.WEB_APPLICATIONS_HOLDER);
-            if (webappsHolder != null) {
-                WebApplication deployedWebapp = webappsHolder.getStartedWebapps().
+
+            WebApplicationsHolder webApplicationsHolder = WebAppUtils.getWebappHolder(
+                    ghostWebapp.getWebappFile().getAbsolutePath(), configurationContext);
+
+            if (webApplicationsHolder != null) {
+                WebApplication deployedWebapp = webApplicationsHolder.getStartedWebapps().
                         get(ghostWebapp.getWebappFile().getName());
                 if (deployedWebapp == null) {
                     return null;
@@ -112,13 +114,13 @@ public class GhostWebappDeployerUtils {
                 } else {
                     try {
 
-                        GhostArtifactRegistry ghostRegistry =
-                                GhostDeployerUtils.getGhostArtifactRegistry(configurationContext.getAxisConfiguration());
+                        GhostArtifactRepository ghostArtifactRepository =
+                                GhostDeployerUtils.getGhostArtifactRepository(configurationContext.getAxisConfiguration());
 
-                        if (ghostRegistry == null) {
+                        if (ghostArtifactRepository == null) {
                             return null;
                         }
-                        DeploymentFileDataWrapper dfdWrapper = ghostRegistry.getDeploymentFileData(deployedWebapp
+                        DeploymentFileDataWrapper dfdWrapper = ghostArtifactRepository.getDeploymentFileData(deployedWebapp
                                 .getWebappFile().getPath());
                         Host host = DataHolder.getCarbonTomcatService().getTomcat().getHost();
 
@@ -131,7 +133,7 @@ public class GhostWebappDeployerUtils {
                                     getTransitGhostWebAppsMap(configurationContext);
                             transitGhostList.put(deployedWebapp.getContextName(), deployedWebapp);
 
-                            webappsHolder.undeployWebapp(deployedWebapp);
+                            webApplicationsHolder.undeployWebapp(deployedWebapp);
 
                             TomcatGenericWebappsDeployer tomcatWebappDeployer =
                                     deployedWebapp.getTomcatGenericWebappsDeployer();
@@ -157,7 +159,7 @@ public class GhostWebappDeployerUtils {
                             tomcatWebappDeployer.deploy(dfd.getFile(),
                                     servletContextParameters,
                                     listeners);
-                            newWebApp = webappsHolder.getStartedWebapps().get(dfd.getFile().
+                            newWebApp = webApplicationsHolder.getStartedWebapps().get(dfd.getFile().
                                     getName());
                             newWebApp.setProperty(CarbonConstants.GHOST_WEBAPP_PARAM, "false");
                             // Check for jaxwebapps or jaggery apps
@@ -167,7 +169,7 @@ public class GhostWebappDeployerUtils {
                             newWebApp.setIsGhostWebapp(false);
 
                             //change the state from ghost to actual
-                            ghostRegistry.addDeploymentFileData(dfd, Boolean.FALSE);
+                            ghostArtifactRepository.addDeploymentFileData(dfd, Boolean.FALSE);
 
                             transitGhostList.remove(newWebApp.getContextName());
                         }
@@ -359,7 +361,12 @@ public class GhostWebappDeployerUtils {
                     return null;
                 }
                 if (dummyContextPath != null) {
-                    Host host = DataHolder.getCarbonTomcatService().getTomcat().getHost();
+                    String hostName = WebAppUtils.getMatchingHostName(WebAppUtils.getWebappDirPath(originalFile.getAbsolutePath()));
+                    Host host = (Host)DataHolder.getCarbonTomcatService().getTomcat().getEngine().findChild(hostName);
+                    if(host == null){
+                        host = (Host)DataHolder.getCarbonTomcatService().getTomcat().
+                                getEngine().findChild(WebAppUtils.getDefaultHost());
+                    }
                     if (host.findChild(contextName) == null) {
                         context.setDocBase(dummyContextPath);
                         ContextConfig ctxCfg = new ContextConfig();
@@ -551,18 +558,16 @@ public class GhostWebappDeployerUtils {
      * @return - derived ghost file name
      */
     public static String calculateGhostFileName(String fileName, String repoPath) {
-        String pathPrefix = "";
         String javaTmpDir = System.getProperty("java.io.tmpdir");
         String cappUnzipPath  = javaTmpDir.endsWith(File.separator) ?
                 javaTmpDir + "carbonapps" :
                 javaTmpDir + File.separator + "carbonapps";
-        if (fileName != null && fileName.contains("\\")) {
-            pathPrefix = "/";
-        }
         fileName = separatorsToUnix(fileName);
         cappUnzipPath = separatorsToUnix(cappUnzipPath);
+        repoPath = separatorsToUnix(
+                new File(repoPath).getAbsolutePath().concat(File.separator));
+
         String ghostFileName = null;
-        fileName = pathPrefix + fileName;
 
         if (fileName.startsWith(repoPath)) {
             // first drop the repo path
@@ -600,18 +605,17 @@ public class GhostWebappDeployerUtils {
      * file absolute path.
      *
      * @param configurationContext - configurationContext instance that has the webapps holder property
-     * @param webappName           - absolute path of the webapp to be compared with other webapps in the holder
+     * @param webappFilePath           - absolute path of the webapp to be compared with other webapps in the holder
      * @return webapplicatioon found by the comparison or null
      */
     public static WebApplication findDeployedWebapp(ConfigurationContext configurationContext,
-                                                    String webappName) {
+                                                    String webappFilePath) {
 
         try {
-            WebApplicationsHolder webApplicationsHolder = (WebApplicationsHolder)
-                    configurationContext.getProperty(CarbonConstants.WEB_APPLICATIONS_HOLDER);
+            WebApplicationsHolder webApplicationsHolder = WebAppUtils.getWebappHolder(webappFilePath, configurationContext);
 
             if (webApplicationsHolder != null) {
-                return webApplicationsHolder.getStartedWebapps().get(webappName);
+                return webApplicationsHolder.getStartedWebapps().get(WebAppUtils.getWebappName(webappFilePath));
             }
 
         } catch (Exception e) {
@@ -722,8 +726,7 @@ public class GhostWebappDeployerUtils {
                 try {
                     WebApplication ghostWebApplication = GhostWebappDeployerUtils.addGhostWebApp(
                             ghostFile, ghostFile, null, configContext);
-                    WebApplicationsHolder webappsHolder = (WebApplicationsHolder) configContext.
-                            getProperty(CarbonConstants.WEB_APPLICATIONS_HOLDER);
+                    WebApplicationsHolder webappsHolder = WebAppUtils.getWebappHolder(ghostFile.getAbsolutePath(), configContext);
 
                     String ghostWebappFileName = ghostWebApplication.getWebappFile().getName();
                     String webappFileProperty = (String) ghostWebApplication.
