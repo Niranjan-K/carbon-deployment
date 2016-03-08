@@ -1334,10 +1334,10 @@
         <eclipse.osgi.version>3.9.1.v20130814-1242</eclipse.osgi.version>
 
         <!-- Axiom Version -->
-        <axiom.wso2.version>1.2.11.wso2v6</axiom.wso2.version>
-        <orbit.version.axiom>1.2.11.wso2v6</orbit.version.axiom>
-        <axiom.version>1.2.11.wso2v6</axiom.version>
-        <axiom.osgi.version.range>[1.2.11.wso2v6, 1.3.0)</axiom.osgi.version.range>
+        <axiom.wso2.version>1.2.11.wso2v10</axiom.wso2.version>
+        <orbit.version.axiom>1.2.11.wso2v10</orbit.version.axiom>
+        <axiom.version>1.2.11.wso2v10</axiom.version>
+        <axiom.osgi.version.range>[1.2.11, 1.3.0)</axiom.osgi.version.range>
 
         <!-- Axis2 Version -->
         <axis2.wso2.version>1.6.1.wso2v14</axis2.wso2.version>
@@ -1349,7 +1349,7 @@
         <neethi.osgi.version.range>[2.0.4.wso2v4, 3.1.0)</neethi.osgi.version.range>
 
         <!-- Rampart Version -->
-        <rampart.wso2.version>1.6.1.wso2v16</rampart.wso2.version>
+        <rampart.wso2.version>1.6.1.wso2v19</rampart.wso2.version>
 
         <libthrift.wso2.version>0.8.0.wso2v1</libthrift.wso2.version>
 
