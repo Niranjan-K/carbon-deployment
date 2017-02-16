@@ -441,96 +441,89 @@ public class OpenEJBContextConfig extends ContextConfig {
 		return classes;
 	}
 
-	// ############ START - WSO2 PATCH ############
-	@Override // called before processAnnotationsFile so using it as hook to init webInfClassesAnnotationsProcessed
-	protected void processServletContainerInitializers(final ServletContext ctx) {
-		// ############ END - WSO2 PATCH ############
-		webInfClassesAnnotationsProcessed = false;
-		try {
-			// ############ START - WSO2 PATCH ############
-			//Since Tomee 1.7.2 based on Tomcat 7.0.61 and we are using Tomcat 7.0.59 there is a API change
-			//in org.apache.catalina.startup.ContextConfig.processServletContainerInitializers method
-			//In tomcat 7.0.61 this method take no arags. But in 7.0.59 it takes ServletContext
-			//Therefore add it manually to method signature
-			super.processServletContainerInitializers(ctx);
-			// ############ END - WSO2 PATCH ############
+    // ############ START - WSO2 PATCH ############
+    @Override // called before processAnnotationsFile so using it as hook to init webInfClassesAnnotationsProcessed
+    protected void processServletContainerInitializers() {
+        // ############ END - WSO2 PATCH ############
+        webInfClassesAnnotationsProcessed = false;
+        try {
+            super.processServletContainerInitializers();
+            final Iterator<Map.Entry<ServletContainerInitializer,Set<Class<?>>>> iterator = initializerClassMap.entrySet().iterator();
+            while (iterator.hasNext()) {
+                final Map.Entry<ServletContainerInitializer, Set<Class<?>>> entry = iterator.next();
+                final ServletContainerInitializer sci = entry.getKey();
+                final String classname = sci.getClass().getName();
+                if (classname.equals("org.apache.myfaces.ee6.MyFacesContainerInitializer")
+                        || classname.equals("org.springframework.web.SpringServletContainerInitializer")) {
+                    for (final Map.Entry<Class<?>, Set<ServletContainerInitializer>> scanning : typeInitializerMap.entrySet()) {
+                        final Set<ServletContainerInitializer> scis = scanning.getValue();
+                        if (scis != null && scis.contains(sci)) {
+                            scis.remove(sci);
+                        }
+                    }
+                    iterator.remove();
+                }
+            }
 
-			final Iterator<Map.Entry<ServletContainerInitializer,Set<Class<?>>>> iterator = initializerClassMap.entrySet().iterator();
-			while (iterator.hasNext()) {
-				final Map.Entry<ServletContainerInitializer, Set<Class<?>>> entry = iterator.next();
-				final ServletContainerInitializer sci = entry.getKey();
-				final String classname = sci.getClass().getName();
-				if (classname.equals("org.apache.myfaces.ee6.MyFacesContainerInitializer")
-				    || classname.equals("org.springframework.web.SpringServletContainerInitializer")) {
-					for (final Map.Entry<Class<?>, Set<ServletContainerInitializer>> scanning : typeInitializerMap.entrySet()) {
-						final Set<ServletContainerInitializer> scis = scanning.getValue();
-						if (scis != null && scis.contains(sci)) {
-							scis.remove(sci);
-						}
-					}
-					iterator.remove();
-				}
-			}
+            final ClassLoader loader = context.getLoader().getClassLoader();
 
-			final ClassLoader loader = context.getLoader().getClassLoader();
+            // spring-web (not scanned)
+            try {
+                final Class<?> initializer = Class.forName("org.springframework.web.SpringServletContainerInitializer", true, loader);
+                final ServletContainerInitializer instance = (ServletContainerInitializer) initializer.newInstance();
+                typeInitializerMap.put(Class.forName("org.springframework.web.WebApplicationInitializer", true, loader), Collections
+                        .singleton(instance));
+                initializerClassMap.put(instance, new HashSet<Class<?>>());
+            } catch (final Exception ignored) {
+                // no-op
+            } catch (final NoClassDefFoundError error) {
+                // no-op
+            }
 
-			// spring-web (not scanned)
-			try {
-				final Class<?> initializer = Class.forName("org.springframework.web.SpringServletContainerInitializer", true, loader);
-				final ServletContainerInitializer instance = (ServletContainerInitializer) initializer.newInstance();
-				typeInitializerMap.put(Class.forName("org.springframework.web.WebApplicationInitializer", true, loader), Collections
-						.singleton(instance));
-				initializerClassMap.put(instance, new HashSet<Class<?>>());
-			} catch (final Exception ignored) {
-				// no-op
-			} catch (final NoClassDefFoundError error) {
-				// no-op
-			}
+            // scanned SCIs
+            if (typeInitializerMap.size() > 0 && finder != null) {
+                for (final Map.Entry<Class<?>, Set<ServletContainerInitializer>> entry : typeInitializerMap.entrySet()) {
+                    if (entry.getValue() == null || entry.getValue().isEmpty()) {
+                        continue;
+                    }
 
-			// scanned SCIs
-			if (typeInitializerMap.size() > 0 && finder != null) {
-				for (final Map.Entry<Class<?>, Set<ServletContainerInitializer>> entry : typeInitializerMap.entrySet()) {
-					if (entry.getValue() == null || entry.getValue().isEmpty()) {
-						continue;
-					}
+                    final Class<?> annotation = entry.getKey();
+                    for (final ServletContainerInitializer sci : entry.getValue()) {
+                        if (annotation.isAnnotation()) {
+                            try {
+                                final Class<? extends Annotation> reloadedAnnotation = Class.class.cast(tempLoader.loadClass(annotation.getName()));
+                                addClassesWithRightLoader(loader, sci, finder.findAnnotatedClasses(reloadedAnnotation));
+                            } catch (final Throwable th) {
+                                // no-op
+                            }
+                        } else {
+                            try {
+                                final Class<?> reloadedClass = tempLoader.loadClass(annotation.getName());
 
-					final Class<?> annotation = entry.getKey();
-					for (final ServletContainerInitializer sci : entry.getValue()) {
-						if (annotation.isAnnotation()) {
-							try {
-								final Class<? extends Annotation> reloadedAnnotation = Class.class.cast(tempLoader.loadClass(annotation.getName()));
-								addClassesWithRightLoader(loader, sci, finder.findAnnotatedClasses(reloadedAnnotation));
-							} catch (final Throwable th) {
-								// no-op
-							}
-						} else {
-							try {
-								final Class<?> reloadedClass = tempLoader.loadClass(annotation.getName());
+                                final List<Class<?>> implementations;
+                                if (annotation.isInterface()) {
+                                    implementations = List.class.cast(finder.findImplementations(reloadedClass));
+                                } else {
+                                    implementations = List.class.cast(finder.findSubclasses(reloadedClass));
+                                }
 
-								final List<Class<?>> implementations;
-								if (annotation.isInterface()) {
-									implementations = List.class.cast(finder.findImplementations(reloadedClass));
-								} else {
-									implementations = List.class.cast(finder.findSubclasses(reloadedClass));
-								}
+                                addClassesWithRightLoader(loader, sci, implementations);
+                            } catch (final Throwable th) {
+                                // no-op
+                            }
+                        }
+                    }
+                }
+            }
 
-								addClassesWithRightLoader(loader, sci, implementations);
-							} catch (final Throwable th) {
-								// no-op
-							}
-						}
-					}
-				}
-			}
-
-			// done
-			finder = null;
-			tempLoader = null;
-		} catch (final RuntimeException e) { // if exception occurs we have to clear the threadlocal
-			webInfClassesAnnotationsProcessed = false;
-			throw e;
-		}
-	}
+            // done
+            finder = null;
+            tempLoader = null;
+        } catch (final RuntimeException e) { // if exception occurs we have to clear the threadlocal
+            webInfClassesAnnotationsProcessed = false;
+            throw e;
+        }
+    }
 
 	@Override // called after processAnnotationsXX so using it as hook to reset webInfClassesAnnotationsProcessed
 	protected void processAnnotations(final Set<WebXml> fragments, final boolean handlesTypesOnly) {
