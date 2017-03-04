@@ -14,6 +14,20 @@
         <version>1</version>
     </parent>
 
+    <repositories>
+        <!-- WSO2 released artifact repository -->
+        <repository>
+            <id>wso2.releases.staging</id>
+            <name>WSO2 Releases Repository Staging</name>
+            <url>https://maven.wso2.org/nexus/content/repositories/orgwso2carbon-1128</url>
+            <releases>
+                <enabled>true</enabled>
+                <updatePolicy>daily</updatePolicy>
+                <checksumPolicy>ignore</checksumPolicy>
+            </releases>
+        </repository>
+    </repositories>
+
     <modules>
         <module>service-stubs/service-mgt</module>
         <module>service-stubs/webapp-mgt</module>
@@ -1318,7 +1332,7 @@
         <carbon.commons.imp.pkg.version>[4.4.0, 5.0.0)</carbon.commons.imp.pkg.version>
 
         <!-- Carbon Identity version-->
-        <carbon.identity.version>4.5.6</carbon.identity.version>
+        <carbon.identity.version>4.5.5</carbon.identity.version>
         <carbon.identity.imp.pkg.version>[4.5.0, 5.0.0)</carbon.identity.imp.pkg.version>
 
         <orbit.version.openid4java>0.9.6.wso2v2</orbit.version.openid4java>
